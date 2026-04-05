@@ -15,49 +15,51 @@ var searchCmd = &cobra.Command{
 Results are ranked: exact match > prefix > fuzzy.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		query := strings.Join(args, " ")
-		dbPath := getDBPath(cmd)
-		ensureFresh(dbPath)
-		jsonOut := getJSONFlag(cmd)
-		kind, _ := cmd.Flags().GetString("kind")
-		limit, _ := cmd.Flags().GetInt("limit")
-		lang, _ := cmd.Flags().GetString("lang")
-		exact, _ := cmd.Flags().GetBool("exact")
-		textMode, _ := cmd.Flags().GetBool("text")
+		return timeQuery("search", func() error {
+			query := strings.Join(args, " ")
+			dbPath := getDBPath(cmd)
+			ensureFresh(dbPath)
+			jsonOut := getJSONFlag(cmd)
+			kind, _ := cmd.Flags().GetString("kind")
+			limit, _ := cmd.Flags().GetInt("limit")
+			lang, _ := cmd.Flags().GetString("lang")
+			exact, _ := cmd.Flags().GetBool("exact")
+			textMode, _ := cmd.Flags().GetBool("text")
 
-		if textMode {
-			return searchText(dbPath, query, lang, limit, jsonOut)
-		}
+			if textMode {
+				return searchText(dbPath, query, lang, limit, jsonOut)
+			}
 
-		results, err := index.SearchSymbols(dbPath, index.SearchQuery{
-			Text:     query,
-			Kind:     kind,
-			Language: lang,
-			Exact:    exact,
-			Limit:    limit,
+			results, err := index.SearchSymbols(dbPath, index.SearchQuery{
+				Text:     query,
+				Kind:     kind,
+				Language: lang,
+				Exact:    exact,
+				Limit:    limit,
+			})
+			if err != nil {
+				return err
+			}
+
+			if len(results) == 0 {
+				return fmt.Errorf("no results found for '%s'", query)
+			}
+
+			if jsonOut {
+				return writeJSON(results)
+			}
+
+			var content strings.Builder
+			for _, r := range results {
+				fmt.Fprintf(&content, "%s %s %s:%d\n", r.Kind, r.Name, r.RelPath, r.StartLine)
+			}
+
+			frontmatter([]kv{
+				{"query", query},
+				{"result_count", fmt.Sprintf("%d", len(results))},
+			}, content.String())
+			return nil
 		})
-		if err != nil {
-			return err
-		}
-
-		if len(results) == 0 {
-			return fmt.Errorf("no results found for '%s'", query)
-		}
-
-		if jsonOut {
-			return writeJSON(results)
-		}
-
-		var content strings.Builder
-		for _, r := range results {
-			fmt.Fprintf(&content, "%s %s %s:%d\n", r.Kind, r.Name, r.RelPath, r.StartLine)
-		}
-
-		frontmatter([]kv{
-			{"query", query},
-			{"result_count", fmt.Sprintf("%d", len(results))},
-		}, content.String())
-		return nil
 	},
 }
 

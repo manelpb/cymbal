@@ -24,43 +24,45 @@ Examples:
   cymbal trace handleRegister -n 20     # limit results`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
-		dbPath := getDBPath(cmd)
-		ensureFresh(dbPath)
-		jsonOut := getJSONFlag(cmd)
-		depth, _ := cmd.Flags().GetInt("depth")
-		limit, _ := cmd.Flags().GetInt("limit")
+		return timeQuery("trace", func() error {
+			name := args[0]
+			dbPath := getDBPath(cmd)
+			ensureFresh(dbPath)
+			jsonOut := getJSONFlag(cmd)
+			depth, _ := cmd.Flags().GetInt("depth")
+			limit, _ := cmd.Flags().GetInt("limit")
 
-		fileHint, symName := parseSymbolArg(name)
-		_ = fileHint // trace resolves internally
+			fileHint, symName := parseSymbolArg(name)
+			_ = fileHint // trace resolves internally
 
-		results, err := index.FindTrace(dbPath, symName, depth, limit)
-		if err != nil {
-			return err
-		}
+			results, err := index.FindTrace(dbPath, symName, depth, limit)
+			if err != nil {
+				return err
+			}
 
-		if jsonOut {
-			return writeJSON(results)
-		}
+			if jsonOut {
+				return writeJSON(results)
+			}
 
-		if len(results) == 0 {
-			fmt.Printf("No outgoing calls found for '%s'.\n", symName)
+			if len(results) == 0 {
+				fmt.Printf("No outgoing calls found for '%s'.\n", symName)
+				return nil
+			}
+
+			var content strings.Builder
+			for _, tr := range results {
+				fmt.Fprintf(&content, "  [%d] %s → %s  %s:%d\n",
+					tr.Depth, tr.Caller, tr.Callee, tr.RelPath, tr.Line)
+			}
+
+			frontmatter([]kv{
+				{"symbol", symName},
+				{"direction", "downward (callees)"},
+				{"depth", fmt.Sprintf("%d", depth)},
+				{"edges", fmt.Sprintf("%d", len(results))},
+			}, content.String())
 			return nil
-		}
-
-		var content strings.Builder
-		for _, tr := range results {
-			fmt.Fprintf(&content, "  [%d] %s → %s  %s:%d\n",
-				tr.Depth, tr.Caller, tr.Callee, tr.RelPath, tr.Line)
-		}
-
-		frontmatter([]kv{
-			{"symbol", symName},
-			{"direction", "downward (callees)"},
-			{"depth", fmt.Sprintf("%d", depth)},
-			{"edges", fmt.Sprintf("%d", len(results))},
-		}, content.String())
-		return nil
+		})
 	},
 }
 

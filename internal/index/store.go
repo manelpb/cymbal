@@ -74,6 +74,12 @@ CREATE INDEX IF NOT EXISTS idx_imports_file ON imports(file_id);
 CREATE INDEX IF NOT EXISTS idx_refs_name ON refs(name);
 CREATE INDEX IF NOT EXISTS idx_refs_file ON refs(file_id);
 
+CREATE TABLE IF NOT EXISTS metrics (
+    name TEXT PRIMARY KEY,
+    value REAL NOT NULL DEFAULT 0,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
 	name,
 	kind,
@@ -870,6 +876,59 @@ func (s *Store) RepoStats() (*RepoStatsResult, error) {
 	}
 
 	return result, nil
+}
+
+// RecordMetric adds value to the named metric (for incrementing counters).
+func (s *Store) RecordMetric(name string, value float64) error {
+	_, err := s.db.Exec(`
+		INSERT INTO metrics (name, value, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(name) DO UPDATE SET
+			value = metrics.value + excluded.value,
+			updated_at = CURRENT_TIMESTAMP
+	`, name, value)
+	return err
+}
+
+// RecordMetricSet sets (replaces) the named metric to value.
+func (s *Store) RecordMetricSet(name string, value float64) error {
+	_, err := s.db.Exec(`
+		INSERT INTO metrics (name, value, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(name) DO UPDATE SET
+			value = excluded.value,
+			updated_at = CURRENT_TIMESTAMP
+	`, name, value)
+	return err
+}
+
+// GetMetric returns the value of a named metric, or 0 if not found.
+func (s *Store) GetMetric(name string) (float64, error) {
+	var value float64
+	err := s.db.QueryRow(`SELECT value FROM metrics WHERE name = ?`, name).Scan(&value)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return value, err
+}
+
+// GetAllMetrics returns all metric name/value pairs.
+func (s *Store) GetAllMetrics() (map[string]float64, error) {
+	rows, err := s.db.Query(`SELECT name, value FROM metrics`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]float64)
+	for rows.Next() {
+		var name string
+		var value float64
+		if err := rows.Scan(&name, &value); err != nil {
+			return nil, err
+		}
+		result[name] = value
+	}
+	return result, rows.Err()
 }
 
 // FileInfo holds basic file info from the index.
