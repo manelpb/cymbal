@@ -23,37 +23,39 @@ Supports batch: cymbal refs Foo Bar Baz
 Note: references are best-effort based on AST name matching, not semantic analysis.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dbPath := getDBPath(cmd)
-		ensureFresh(dbPath)
-		jsonOut := getJSONFlag(cmd)
-		importers, _ := cmd.Flags().GetBool("importers")
-		impact, _ := cmd.Flags().GetBool("impact")
-		depth, _ := cmd.Flags().GetInt("depth")
-		limit, _ := cmd.Flags().GetInt("limit")
-		ctx, _ := cmd.Flags().GetInt("context")
+		return timeQuery("refs", func() error {
+			dbPath := getDBPath(cmd)
+			ensureFresh(dbPath)
+			jsonOut := getJSONFlag(cmd)
+			importers, _ := cmd.Flags().GetBool("importers")
+			impact, _ := cmd.Flags().GetBool("impact")
+			depth, _ := cmd.Flags().GetInt("depth")
+			limit, _ := cmd.Flags().GetInt("limit")
+			ctx, _ := cmd.Flags().GetInt("context")
 
-		if impact {
-			importers = true
-			if depth < 2 {
-				depth = 2
+			if impact {
+				importers = true
+				if depth < 2 {
+					depth = 2
+				}
 			}
-		}
 
-		for i, name := range args {
-			if i > 0 {
-				fmt.Println()
+			for i, name := range args {
+				if i > 0 {
+					fmt.Println()
+				}
+				var err error
+				if importers {
+					err = refsImporters(dbPath, name, depth, limit, jsonOut)
+				} else {
+					err = refsSymbol(dbPath, name, limit, ctx, jsonOut)
+				}
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
+				}
 			}
-			var err error
-			if importers {
-				err = refsImporters(dbPath, name, depth, limit, jsonOut)
-			} else {
-				err = refsSymbol(dbPath, name, limit, ctx, jsonOut)
-			}
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
-			}
-		}
-		return nil
+			return nil
+		})
 	},
 }
 

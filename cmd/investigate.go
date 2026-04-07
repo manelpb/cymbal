@@ -32,28 +32,30 @@ Examples:
   cymbal investigate Foo Bar Baz     # batch: investigate multiple symbols`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dbPath := getDBPath(cmd)
-		ensureFresh(dbPath)
-		jsonOut := getJSONFlag(cmd)
+		return timeQuery("investigate", func() error {
+			dbPath := getDBPath(cmd)
+			ensureFresh(dbPath)
+			jsonOut := getJSONFlag(cmd)
 
-		if jsonOut && len(args) > 1 {
-			var all []any
-			for _, name := range args {
-				data := investigateOne(dbPath, name)
-				all = append(all, data)
+			if jsonOut && len(args) > 1 {
+				var all []any
+				for _, name := range args {
+					data := investigateOne(dbPath, name)
+					all = append(all, data)
+				}
+				return writeJSON(all)
 			}
-			return writeJSON(all)
-		}
 
-		for i, name := range args {
-			if i > 0 {
-				fmt.Println()
+			for i, name := range args {
+				if i > 0 {
+					fmt.Println()
+				}
+				if err := investigateOnePrint(dbPath, name, jsonOut); err != nil {
+					fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
+				}
 			}
-			if err := investigateOnePrint(dbPath, name, jsonOut); err != nil {
-				fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
-			}
-		}
-		return nil
+			return nil
+		})
 	},
 }
 

@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/1broseidon/cymbal/internal/metrics"
 	"github.com/1broseidon/cymbal/internal/parser"
 	"github.com/1broseidon/cymbal/internal/summarize"
 	"github.com/1broseidon/cymbal/internal/symbols"
@@ -207,6 +208,8 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 	}
 	defer store.Close()
 
+	metrics.SetDBPath(dbPath)
+
 	// Store repo root in metadata.
 	if err := store.SetMeta("repo_root", root); err != nil {
 		return nil, fmt.Errorf("setting repo metadata: %w", err)
@@ -358,6 +361,21 @@ func Index(root, dbPath string, opts Options) (*Stats, error) {
 		}
 		stats.Summarized = summarized
 	}
+
+	metrics.IndexFilesIndexed.WithLabelValues("total").Add(float64(indexed.Load()))
+	metrics.IndexFilesSkipped.WithLabelValues("total").Add(float64(unchanged.Load()))
+	metrics.IndexErrors.WithLabelValues("parse").Add(float64(parseErrs.Load()))
+	metrics.IndexErrors.WithLabelValues("write").Add(float64(writeErrs.Load()))
+	metrics.IndexSymbolsFound.WithLabelValues("total").Add(float64(found.Load()))
+	metrics.IndexStaleRemoved.Add(float64(staleRemoved))
+
+	// Persist metrics to DB for cross-process visibility.
+	store.RecordMetric("index_files_indexed", float64(indexed.Load()))
+	store.RecordMetric("index_files_skipped", float64(unchanged.Load()))
+	store.RecordMetric("index_parse_errors", float64(parseErrs.Load()))
+	store.RecordMetric("index_write_errors", float64(writeErrs.Load()))
+	store.RecordMetric("index_symbols_found", float64(found.Load()))
+	store.RecordMetric("index_stale_removed", float64(staleRemoved))
 
 	return stats, nil
 }
